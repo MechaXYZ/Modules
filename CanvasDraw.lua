@@ -258,9 +258,11 @@ do
 
 			-- Generate initial grid of color data
 			local Grid = TableCreate(ResX)
+			
 			for x = 1, ResX do
 				Grid[x] = TableCreate(ResY, Color3.new(0.98, 1, 1))
 			end
+
 			Canvas._Grid = Grid
 
 			-- Create a pool of Frame instances with Gradients
@@ -298,9 +300,14 @@ do
 			-- Define API
 			local function createGradient(colorData, x, pixelStart, pixelCount)
 				local Sequence = TableCreate(#colorData)
+
 				for i, data in colorData do
 					Sequence[i] = ColorSeqKeyPNew(Mclamp(data.p / pixelCount, 0, 1), data.c)
 				end
+
+				table.sort(Sequence, function(a, b)
+					return a.Time < b.Time
+				end)
 
 				local Frame = Canvas._Pool:Get()
 				Frame.Position = UDim2FromScale(invX * (x - 1), pixelStart * invY)
@@ -569,6 +576,7 @@ do
 					previous = entry
 				end
 			end
+
 			return unescape(table.concat(sequence))
 		end
 
