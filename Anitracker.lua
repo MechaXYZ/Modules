@@ -97,7 +97,7 @@ do
 		if typeof(keyframe) == "number" then
 			local num = keyframe
 			keyframe = self.Animation[num]
-			assert(keyframe, `Keyframe #{num} does not exist!`)
+			assert(keyframe, string.format("Keyframe #%d does not exist!", num))
 		end
 
 		assert(table.find(self.Animation, keyframe), "Keyframe does not exist!")
@@ -133,13 +133,15 @@ do
 
 			for _, v in pairs(boner:GetChildren()) do
 				if string.find(v.Name, "_Initial") then
-					local bone = root:FindFirstChild(string.gsub(v.Name, "_Initial", ""), true)
+					repeat
+						local bone = root:FindFirstChild(string.gsub(v.Name, "_Initial", ""), true)
 
-					if not bone then
-						continue
-					end
+						if not bone then
+							break
+						end
 
-					bone:SetAttribute("Initial", v.Value)
+						bone:SetAttribute("Initial", v.Value)
+					until true
 				end
 			end
 		end
@@ -169,52 +171,56 @@ do
 
 				if not boner then
 					for i, v in pairs(AnimationTrack.Rigs[rig].Welds) do
-						if not v.Parent then
-							AnimationTrack.Rigs[rig].Welds[i] = nil
-							continue
-						end
+						repeat
+							if not v.Parent then
+								AnimationTrack.Rigs[rig].Welds[i] = nil
+								break
+							end
 
-						if not allDone then
-							v.Enabled = v:GetAttribute("Enabled") or true
-							v.C0 = v.Parent.C0 * AnimationTrack.Rigs[rig].Poses[i]
-						else
-							if not self.NoDisableTransition then
-								v.C0 = v.C0:Lerp(v.Parent.C0 * v.Parent.Transform, self.lerpFactor)
+							if not allDone then
+								v.Enabled = v:GetAttribute("Enabled") or true
+								v.C0 = v.Parent.C0 * AnimationTrack.Rigs[rig].Poses[i]
+							else
+								if not self.NoDisableTransition then
+									v.C0 = v.C0:Lerp(v.Parent.C0 * v.Parent.Transform, self.lerpFactor)
 
-								if (v.C0.Position - (v.Parent.C0 * v.Parent.Transform).Position).Magnitude <= .1 then
-									if not v.Enabled then
-										v.Enabled = false
+									if (v.C0.Position - (v.Parent.C0 * v.Parent.Transform).Position).Magnitude <= .1 then
+										if not v.Enabled then
+											v.Enabled = false
+										end
+
+										if AnimationTrack.Rigs[self.Rig] then
+											AnimationTrack.Rigs[self.Rig].Poses[i] = CFrame.new()
+										end
 									end
+								else
+									v.Enabled = false
 
 									if AnimationTrack.Rigs[self.Rig] then
-										AnimationTrack.Rigs[self.Rig].Poses[i] = CFrame.new()
+										AnimationTrack.Rigs[self.Rig].Poses[i] = v.Parent.Transform
 									end
 								end
-							else
-								v.Enabled = false
-
-								if AnimationTrack.Rigs[self.Rig] then
-									AnimationTrack.Rigs[self.Rig].Poses[i] = v.Parent.Transform
-								end
 							end
-						end
+						until true
 					end
 				else
 					for i, v in pairs(AnimationTrack.Rigs[rig].Welds) do
-						if not v:GetAttribute("Initial") then
-							AnimationTrack.Rigs[rig].Welds[i] = nil
-							continue
-						end
-
-						if not allDone then
-							v.CFrame = v:GetAttribute("Initial") * AnimationTrack.Rigs[rig].Poses[i]
-						else
-							v.CFrame = v:GetAttribute("Initial")
-
-							if AnimationTrack.Rigs[self.Rig] then
-								AnimationTrack.Rigs[self.Rig].Poses[i] = CFrame.new()
+						repeat
+							if not v:GetAttribute("Initial") then
+								AnimationTrack.Rigs[rig].Welds[i] = nil
+								break
 							end
-						end
+
+							if not allDone then
+								v.CFrame = v:GetAttribute("Initial") * AnimationTrack.Rigs[rig].Poses[i]
+							else
+								v.CFrame = v:GetAttribute("Initial")
+
+								if AnimationTrack.Rigs[self.Rig] then
+									AnimationTrack.Rigs[self.Rig].Poses[i] = CFrame.new()
+								end
+							end
+						until true
 					end
 				end
 			end)
@@ -225,28 +231,30 @@ do
 		end
 
 		for _, v in pairs(rig:GetDescendants()) do
-			if boner and v:IsA("Bone") and self.Used[v.Name] then
-				AnimationTrack.Rigs[rig].Welds[v.Name] = v
-				AnimationTrack.Rigs[rig].Poses[v.Name] = CFrame.new()
+			repeat
+				if boner and v:IsA("Bone") and self.Used[v.Name] then
+					AnimationTrack.Rigs[rig].Welds[v.Name] = v
+					AnimationTrack.Rigs[rig].Poses[v.Name] = CFrame.new()
 
-				continue
-			end
-
-			if v:IsA("Motor6D") and self.Used[v.Part1.Name] then
-				local weld = v:FindFirstChild("AWeld")
-
-				if not weld then
-					weld = Instance.new("Weld", v)
-					weld.C0 = v.C0
-					weld.C1 = v.C1
-					weld.Name = "AWeld"
-					weld.Part0 = v.Part0
-					weld.Part1 = v.Part1
+					break
 				end
 
-				AnimationTrack.Rigs[rig].Welds[v.Part1.Name] = weld
-				AnimationTrack.Rigs[rig].Poses[v.Part1.Name] = CFrame.new()
-			end
+				if v:IsA("Motor6D") and self.Used[v.Part1.Name] then
+					local weld = v:FindFirstChild("AWeld")
+
+					if not weld then
+						weld = Instance.new("Weld", v)
+						weld.C0 = v.C0
+						weld.C1 = v.C1
+						weld.Name = "AWeld"
+						weld.Part0 = v.Part0
+						weld.Part1 = v.Part1
+					end
+
+					AnimationTrack.Rigs[rig].Welds[v.Part1.Name] = weld
+					AnimationTrack.Rigs[rig].Poses[v.Part1.Name] = CFrame.new()
+				end
+			until true
 		end
 
 		coroutine.wrap(function()
@@ -297,20 +305,22 @@ do
 			end
 
 			for j, w in pairs(v) do
-				if typeof(w) ~= "table" or found[j] then
-					if typeof(w) == "string" then
-						table.insert(self.KeyframeMarkers, {
-							Name = j,
-							Value = w,
-							Time = v.tm
-						})
+				repeat
+					if typeof(w) ~= "table" or found[j] then
+						if typeof(w) == "string" then
+							table.insert(self.KeyframeMarkers, {
+								Name = j,
+								Value = w,
+								Time = v.tm
+							})
+						end
+
+						break
 					end
 
-					continue
-				end
-
-				found[j] = true
-				self.Used[j] = true
+					found[j] = true
+					self.Used[j] = true
+				until true
 			end
 		end
 		
@@ -385,58 +395,67 @@ do
 		end
 
 		for j, w in pairs(v) do
-			if typeof(w) ~= "table" or not AnimationTrack.Rigs[self.Rig].Poses[j] then
-				if typeof(w) == "string" and self.Binds[j] then
-					self.Binds[j]:Fire(w)
+			local br = false
+
+			repeat
+				if typeof(w) ~= "table" or not AnimationTrack.Rigs[self.Rig].Poses[j] then
+					if typeof(w) == "string" and self.Binds[j] then
+						self.Binds[j]:Fire(w)
+					end
+
+					break
 				end
 
-				continue
-			end
-
-			if not AnimationTrack.Rigs[self.Rig].Animations then
-				break
-			end
-
-			if (self:IsPrioritized(j) and inst) and (w.es == "Constant" or inst) then
-				if inst and self:IsPrioritized(j) then
-					AnimationTrack.Rigs[self.Rig].Poses[j] = w.cf
-					continue
+				if not AnimationTrack.Rigs[self.Rig].Animations then
+					br = true
+					break
 				end
 
-				local start = tick()
+				if (self:IsPrioritized(j) and inst) and (w.es == "Constant" or inst) then
+					if inst and self:IsPrioritized(j) then
+						AnimationTrack.Rigs[self.Rig].Poses[j] = w.cf
+						break
+					end
+
+					local start = tick()
+
+					coroutine.wrap(function()
+						repeat
+							AnimationTrack.Rigs[self.Rig].Poses[j] = w.cf
+							twait()
+						until tick() - start >= (w.tm / speed)
+					end)()
+
+					break
+				end
+
+				if not enumExists("EasingStyle", w.es) then
+					w.es = "Linear"
+				end
 
 				coroutine.wrap(function()
+					local s = tick()
+					local current = AnimationTrack.Rigs[self.Rig].Poses[j]
+
 					repeat
-						AnimationTrack.Rigs[self.Rig].Poses[j] = w.cf
 						twait()
-					until tick() - start >= (w.tm / speed)
+
+						local cf = current:Lerp(w.cf, tween:GetValue(
+							(tick() - s) / (w.tm / speed),
+							Enum.EasingStyle[w.es],
+							Enum.EasingDirection[w.ed]
+						))
+
+						if self:IsPrioritized(j) then
+							AnimationTrack.Rigs[self.Rig].Poses[j] = AnimationTrack.Rigs[self.Rig].Poses[j]:Lerp(cf, math.min(self.lerpFactor * math.max(1, speed), 1))
+						end
+					until (tick() - s) >= (w.tm / speed)
 				end)()
+			until true
 
-				continue
+			if br then
+				break
 			end
-
-			if not enumExists("EasingStyle", w.es) then
-				w.es = "Linear"
-			end
-
-			coroutine.wrap(function()
-				local s = tick()
-				local current = AnimationTrack.Rigs[self.Rig].Poses[j]
-
-				repeat
-					twait()
-
-					local cf = current:Lerp(w.cf, tween:GetValue(
-						(tick() - s) / (w.tm / speed),
-						Enum.EasingStyle[w.es],
-						Enum.EasingDirection[w.ed]
-					))
-
-					if self:IsPrioritized(j) then
-						AnimationTrack.Rigs[self.Rig].Poses[j] = AnimationTrack.Rigs[self.Rig].Poses[j]:Lerp(cf, math.min(self.lerpFactor * math.max(1, speed), 1))
-					end
-				until (tick() - s) >= (w.tm / speed)
-			end)()
 		end
 	end
 
@@ -465,7 +484,7 @@ do
 
 					for _, v in ipairs(self.Animation) do
 						self:goToKeyframe(v, true)
-						self.TimePosition += v.tm
+						self.TimePosition = self.TimePosition + v.tm
 					end
 
 					self.TimePosition = self.Length
@@ -488,7 +507,7 @@ do
 					local time = v.tm
 					
 					cnt = game:GetService("RunService").PreAnimation:Connect(function(dt)
-						total += dt * self.Speed
+						total = total + dt * self.Speed
 						
 						if total >= time then
 							cnt:Disconnect()
@@ -500,7 +519,7 @@ do
 				end
 
 				repeat
-					self.TimePosition += twait() * self.Speed
+					self.TimePosition = self.TimePosition + twait() * self.Speed
 				until self.TimePosition >= (self.Length + (self.Looped and 0 or self.Stall)) or not self.IsPlaying
 
 				if self.TimePosition >= self.Length and not self.Looped then
