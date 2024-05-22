@@ -411,7 +411,7 @@ do
 					break
 				end
 
-				if (self:IsPrioritized(j) and inst) and (w.es == "Constant" or inst) then
+				if self:IsPrioritized(j) and (w.es == "Constant" or inst) then
 					if inst and self:IsPrioritized(j) then
 						AnimationTrack.Rigs[self.Rig].Poses[j] = w.cf
 						break
