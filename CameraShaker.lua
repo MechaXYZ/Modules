@@ -447,3 +447,5 @@ do
 		return shakeInstance
 	end
 end
+
+return CameraShaker, CameraShakeInstance, CameraShakePresets
