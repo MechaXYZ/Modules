@@ -169,7 +169,9 @@ do
 				Animations = {self}
 			}
 
-			local animate = game:GetService("RunService").PreAnimation:Connect(function()
+			local animate
+			
+			animate = game:GetService("RunService").PreAnimation:Connect(function()
 				if not AnimationTrack.Rigs[rig] then
 					animate:Disconnect()
 				end
@@ -239,12 +241,14 @@ do
 				end
 			end)
 
-			local adder = rig.DescendantAdded:Connect(function(v)
+			local adder
+			
+			adder = rig.DescendantAdded:Connect(function(v)
 				if not AnimationTrack.Rigs[rig] then
 					adder:Disconnect()
 				end
 
-				if v:IsA("Motor6D") then
+				if v:IsA("Motor6D") and self.Used[v.Part1.Name] then
 					self:addWeld(v)
 				end
 			end)
