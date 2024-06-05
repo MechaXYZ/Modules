@@ -248,7 +248,7 @@ do
 					adder:Disconnect()
 				end
 
-				if v:IsA("Motor6D") and self.Used[v.Part1.Name] then
+				if v:IsA("Motor6D") then
 					self:addWeld(v)
 				end
 			end)
