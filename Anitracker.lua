@@ -115,6 +115,22 @@ do
 		self.Weight = self.RealWeight
 	end
 
+	function AnimationTrack.addWeld(self, motor)
+		local weld = motor:FindFirstChild("AWeld")
+
+		if not weld then
+			weld = Instance.new("Weld", motor)
+			weld.C0 = motor.C0
+			weld.C1 = motor.C1
+			weld.Name = "AWeld"
+			weld.Part0 = motor.Part0
+			weld.Part1 = motor.Part1
+		end
+
+		AnimationTrack.Rigs[self.Rig].Welds[motor.Part1.Name] = weld
+		AnimationTrack.Rigs[self.Rig].Poses[motor.Part1.Name] = CFrame.new()
+	end
+
 	function AnimationTrack.setRig(self, rig)
 		assert(self.Animation, "Must set Animation before setting Rig!")
 
@@ -153,11 +169,9 @@ do
 				Animations = {self}
 			}
 
-			local cnt
-
-			cnt = game:GetService("RunService").PreAnimation:Connect(function()
+			local animate = game:GetService("RunService").PreAnimation:Connect(function()
 				if not AnimationTrack.Rigs[rig] then
-					cnt:Disconnect()
+					animate:Disconnect()
 				end
 
 				local allDone = true
@@ -225,7 +239,18 @@ do
 				end
 			end)
 
-			AnimationTrack.Rigs[rig].Animate = cnt
+			local adder = rig.DescendantAdded:Connect(function(v)
+				if not AnimationTrack.Rigs[rig] then
+					adder:Disconnect()
+				end
+
+				if v:IsA("Motor6D") and self.Used[v.Part1.Name] then
+					self:addWeld(v)
+				end
+			end)
+
+			AnimationTrack.Rigs[rig].Adder = adder
+			AnimationTrack.Rigs[rig].Animate = animate
 		else
 			table.insert(AnimationTrack.Rigs[rig].Animations, self)
 		end
@@ -240,23 +265,11 @@ do
 				end
 
 				if v:IsA("Motor6D") and self.Used[v.Part1.Name] then
-					local weld = v:FindFirstChild("AWeld")
-
-					if not weld then
-						weld = Instance.new("Weld", v)
-						weld.C0 = v.C0
-						weld.C1 = v.C1
-						weld.Name = "AWeld"
-						weld.Part0 = v.Part0
-						weld.Part1 = v.Part1
-					end
-
-					AnimationTrack.Rigs[rig].Welds[v.Part1.Name] = weld
-					AnimationTrack.Rigs[rig].Poses[v.Part1.Name] = CFrame.new()
+					self:addWeld(v)
 				end
 			until true
 		end
-
+		
 		coroutine.wrap(function()
 			repeat
 				twait()
