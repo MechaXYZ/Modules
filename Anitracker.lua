@@ -33,7 +33,7 @@ do
 	AnimationTrack.TimePosition = 0
 	AnimationTrack.IsPlaying = false
 	AnimationTrack.__index = AnimationTrack
-	AnimationTrack.NoDisableTransition = true
+	AnimationTrack.NoDisableTransition = false
 
 	local function enumExists(type, value)
 		return pcall(function()
@@ -195,11 +195,15 @@ do
 				end
 
 				local allDone = true
+				local usedJoints = {}
 
 				for _, v in pairs(AnimationTrack.Rigs[rig].Animations) do
 					if v.IsPlaying then
 						allDone = false
-						break
+
+						for i in v.Used do
+							usedJoints[i] = true
+						end
 					end
 				end
 
@@ -211,17 +215,15 @@ do
 								break
 							end
 
-							if not allDone then
+							if not allDone and usedJoints[i] then
 								v.Enabled = v:GetAttribute("AnitrackerEnabled")
 								v.C0 = v.Parent.C0 * AnimationTrack.Rigs[rig].Poses[i]
-							else
+							elseif allDone or not usedJoints[i] then
 								if not self.NoDisableTransition then
 									v.C0 = v.C0:Lerp(v.Parent.C0 * v.Parent.Transform, self.lerpFactor)
 
-									if (v.C0.Position - (v.Parent.C0 * v.Parent.Transform).Position).Magnitude <= .1 then
-										if not v.Enabled then
-											v.Enabled = false
-										end
+									if (v.C0.Position - (v.Parent.C0 * v.Parent.Transform).Position).Magnitude <= .2 then
+										v.Enabled = false
 
 										if AnimationTrack.Rigs[self.Rig] then
 											AnimationTrack.Rigs[self.Rig].Poses[i] = CFrame.new()
@@ -473,7 +475,7 @@ do
 					tm = self.Animation[w.nx].tm - v.tm
 				end
 
-				if self:IsPrioritized(j) and (w.es == "Constant" or inst or tm == 0) then
+				if self:IsPrioritized(j) and (w.es == "Constant" or inst) then
 					if inst and self:IsPrioritized(j) then
 						AnimationTrack.Rigs[self.Rig].Poses[j] = cf
 						break
@@ -539,7 +541,7 @@ do
 		self.TimePosition = 0
 
 		-- // just loop through all the keyframes instantly if speed is too high since it'll break
-		if (self.Length / self.Speed) <= .1 and #(self.Animation) > 1 then
+		if false then
 			coroutine.wrap(function()
 				repeat
 					twait()
