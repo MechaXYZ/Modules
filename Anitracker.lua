@@ -201,7 +201,7 @@ do
 					if v.IsPlaying then
 						allDone = false
 
-						for i in v.Used do
+						for i in pairs(v.Used) do
 							usedJoints[i] = true
 						end
 					end
