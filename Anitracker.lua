@@ -313,7 +313,7 @@ do
 			return self.Cache[name]
 		end
 
-		for _, v in pairs(owner.Character:GetDescendants()) do
+		for _, v in pairs(self.Rig:GetDescendants()) do
 			if v:IsA("Motor6D") and v.Part1.Name == name then
 				self.Cache[name] = v
 				return v
