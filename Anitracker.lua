@@ -215,9 +215,12 @@ do
 								break
 							end
 
+							local offset = AnimationTrack.Rigs[rig].Poses[i]
+							offset = CFrame.new(offset.Position * rig:GetScale()) * CFrame.Angles(offset:ToEulerAnglesXYZ())
+
 							if not allDone and usedJoints[i] then
 								v.Enabled = v:GetAttribute("AnitrackerEnabled")
-								v.C0 = v.Parent.C0 * AnimationTrack.Rigs[rig].Poses[i]
+								v.C0 = v.Parent.C0 * offset
 							elseif allDone or not usedJoints[i] then
 								if not self.NoDisableTransition then
 									v.C0 = v.C0:Lerp(v.Parent.C0 * v.Parent.Transform, self.lerpFactor)
