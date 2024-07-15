@@ -346,7 +346,7 @@ do
 
 			for j, w in pairs(v) do
 				repeat
-					if typeof(w) ~= "table" or found[j] then
+					if typeof(w) ~= "table" then
 						if typeof(w) == "string" then
 							table.insert(self.KeyframeMarkers, {
 								Name = j,
