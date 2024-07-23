@@ -1,4 +1,5 @@
 -- humanoidAnimatePlayEmote.lua
+local script = ({...})[1] or script
 
 local Figure = script.Parent
 local Torso = Figure:WaitForChild("Torso")
@@ -536,6 +537,7 @@ Humanoid.Seated:connect(onSeated)
 Humanoid.PlatformStanding:connect(onPlatformStanding)
 Humanoid.Swimming:connect(onSwimming)
 
+--[[
 ---- setup emote chat hook
 game:GetService("Players").LocalPlayer.Chatted:connect(function(msg)
 	local emote = ""
@@ -569,6 +571,8 @@ script:WaitForChild("PlayEmote").OnInvoke = function(emote)
 	-- Return false to indicate that the emote could not be played
 	return false
 end
+]]
+
 -- main program
 
 -- initialize to idle
