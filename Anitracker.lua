@@ -8,6 +8,18 @@
 	3. anim:setRig(rig)
 	4. anim:Play()
 
+	- example code
+	local AnimationTrack = require(path.to.module)
+	local anims = require(path.to.anim)
+
+	-- // can pass an url too
+	-- // local anims = "https://rentry.co/anitracker_example/raw"
+	
+	local anim = AnimationTrack.new()
+	anim:setAnimation(anims)
+	anim:setRig(owner.Character)
+	anim:Play()
+	
 	- AdjustWeight doesn't actually adjust weight, it adjusts priority (i thought weights and priority were the same thing a while back)
 	- set anim.lerpFactor to change how much it lerps into the next pose
 	- AnimationTrack.NoDisableTransition is global and sets whether the welds lerp into their parent's Transform after all animations on a rig are done playing before being disabled, setting it to false disables the welds as soon as the last animation stops
