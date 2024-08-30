@@ -9,7 +9,7 @@
 	4. anim:Play()
 
 	- example code
-	local AnimationTrack = require(path.to.module)
+	local AnimationTrack = require(path.to.module) -- // or alternatively, (for the noobs), loadstring(game:GetService("HttpService"):GetAsync("https://github.com/MechaXYZ/modules/raw/main/Anitracker.lua"))()
 	local anims = require(path.to.anim)
 
 	-- // can pass an url too
