@@ -201,7 +201,7 @@ do
 
 			local animate
 
-			animate = game:GetService("RunService").PreAnimation:Connect(function()
+			animate = game:GetService("RunService").PostSimulation:Connect(function()
 				if not AnimationTrack.Rigs[rig] then
 					animate:Disconnect()
 				end
@@ -585,7 +585,7 @@ do
 					local total = 0
 					local time = v.tm
 
-					cnt = game:GetService("RunService").PreAnimation:Connect(function(dt)
+					cnt = game:GetService("RunService").PostSimulation:Connect(function(dt)
 						total = total + dt * self.Speed
 
 						if total >= time then
