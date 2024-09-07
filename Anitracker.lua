@@ -27,10 +27,453 @@
 	- can also be used on client
 ]]
 
+-- // Signal by sleitnick
+
+local SignalClass
+
+do
+	-- -----------------------------------------------------------------------------
+	--               Batched Yield-Safe Signal Implementation                     --
+	-- This is a Signal class which has effectively identical behavior to a       --
+	-- normal RBXScriptSignal, with the only difference being a couple extra      --
+	-- stack frames at the bottom of the stack trace when an error is thrown.     --
+	-- This implementation caches runner coroutines, so the ability to yield in   --
+	-- the signal handlers comes at minimal extra cost over a naive signal        --
+	-- implementation that either always or never spawns a thread.                --
+	--                                                                            --
+	-- License:                                                                   --
+	--   Licensed under the MIT license.                                          --
+	--                                                                            --
+	-- Authors:                                                                   --
+	--   stravant - July 31st, 2021 - Created the file.                           --
+	--   sleitnick - August 3rd, 2021 - Modified for Knit.                        --
+	-- -----------------------------------------------------------------------------
+
+	-- Signal types
+	export type Connection = {
+		Disconnect: (self: Connection) -> (),
+		Destroy: (self: Connection) -> (),
+		Connected: boolean,
+	}
+
+	export type Signal<T...> = {
+		Fire: (self: Signal<T...>, T...) -> (),
+		FireDeferred: (self: Signal<T...>, T...) -> (),
+		Connect: (self: Signal<T...>, fn: (T...) -> ()) -> Connection,
+		Once: (self: Signal<T...>, fn: (T...) -> ()) -> Connection,
+		DisconnectAll: (self: Signal<T...>) -> (),
+		GetConnections: (self: Signal<T...>) -> { Connection },
+		Destroy: (self: Signal<T...>) -> (),
+		Wait: (self: Signal<T...>) -> T...,
+	}
+
+	-- The currently idle thread to run the next handler on
+	local freeRunnerThread = nil
+
+	-- Function which acquires the currently idle handler runner thread, runs the
+	-- function fn on it, and then releases the thread, returning it to being the
+	-- currently idle one.
+	-- If there was a currently idle runner thread already, that's okay, that old
+	-- one will just get thrown and eventually GCed.
+	local function acquireRunnerThreadAndCallEventHandler(fn, ...)
+		local acquiredRunnerThread = freeRunnerThread
+		freeRunnerThread = nil
+		fn(...)
+		-- The handler finished running, this runner thread is free again.
+		freeRunnerThread = acquiredRunnerThread
+	end
+
+	-- Coroutine runner that we create coroutines of. The coroutine can be
+	-- repeatedly resumed with functions to run followed by the argument to run
+	-- them with.
+	local function runEventHandlerInFreeThread(...)
+		acquireRunnerThreadAndCallEventHandler(...)
+		while true do
+			acquireRunnerThreadAndCallEventHandler(coroutine.yield())
+		end
+	end
+
+	--[=[
+		@within Signal
+		@interface SignalConnection
+		.Connected boolean
+		.Disconnect (SignalConnection) -> ()
+
+		Represents a connection to a signal.
+		```lua
+		local connection = signal:Connect(function() end)
+		print(connection.Connected) --> true
+		connection:Disconnect()
+		print(connection.Connected) --> false
+		```
+	]=]
+
+	-- Connection class
+	local Connection = {}
+	Connection.__index = Connection
+
+	function Connection:Disconnect()
+		if not self.Connected then
+			return
+		end
+		self.Connected = false
+
+		-- Unhook the node, but DON'T clear it. That way any fire calls that are
+		-- currently sitting on this node will be able to iterate forwards off of
+		-- it, but any subsequent fire calls will not hit it, and it will be GCed
+		-- when no more fire calls are sitting on it.
+		if self._signal._handlerListHead == self then
+			self._signal._handlerListHead = self._next
+		else
+			local prev = self._signal._handlerListHead
+			while prev and prev._next ~= self do
+				prev = prev._next
+			end
+			if prev then
+				prev._next = self._next
+			end
+		end
+	end
+
+	Connection.Destroy = Connection.Disconnect
+
+	-- Make Connection strict
+	setmetatable(Connection, {
+		__index = function(_tb, key)
+			error(("Attempt to get Connection::%s (not a valid member)"):format(tostring(key)), 2)
+		end,
+		__newindex = function(_tb, key, _value)
+			error(("Attempt to set Connection::%s (not a valid member)"):format(tostring(key)), 2)
+		end,
+	})
+
+	--[=[
+		@within Signal
+		@type ConnectionFn (...any) -> ()
+
+		A function connected to a signal.
+	]=]
+
+	--[=[
+		@class Signal
+
+		A Signal is a data structure that allows events to be dispatched
+		and observed.
+
+		This implementation is a direct copy of the de facto standard, [GoodSignal](https://devforum.roblox.com/t/lua-signal-class-comparison-optimal-goodsignal-class/1387063),
+		with some added methods and typings.
+
+		For example:
+		```lua
+		local signal = Signal.new()
+
+		-- Subscribe to a signal:
+		signal:Connect(function(msg)
+			print("Got message:", msg)
+		end)
+
+		-- Dispatch an event:
+		signal:Fire("Hello world!")
+		```
+	]=]
+	local Signal = {}
+	Signal.__index = Signal
+
+	--[=[
+		Constructs a new Signal
+
+		@return Signal
+	]=]
+	function Signal.new<T...>(): Signal<T...>
+		local self = setmetatable({
+			_handlerListHead = false,
+			_proxyHandler = nil,
+			_yieldedThreads = nil,
+		}, Signal)
+
+		return self
+	end
+
+	--[=[
+		Constructs a new Signal that wraps around an RBXScriptSignal.
+
+		@param rbxScriptSignal RBXScriptSignal -- Existing RBXScriptSignal to wrap
+		@return Signal
+
+		For example:
+		```lua
+		local signal = Signal.Wrap(workspace.ChildAdded)
+		signal:Connect(function(part) print(part.Name .. " added") end)
+		Instance.new("Part").Parent = workspace
+		```
+	]=]
+	function Signal.Wrap<T...>(rbxScriptSignal: RBXScriptSignal): Signal<T...>
+		assert(
+			typeof(rbxScriptSignal) == "RBXScriptSignal",
+			"Argument #1 to Signal.Wrap must be a RBXScriptSignal; got " .. typeof(rbxScriptSignal)
+		)
+
+		local signal = Signal.new()
+		signal._proxyHandler = rbxScriptSignal:Connect(function(...)
+			signal:Fire(...)
+		end)
+
+		return signal
+	end
+
+	--[=[
+		Checks if the given object is a Signal.
+
+		@param obj any -- Object to check
+		@return boolean -- `true` if the object is a Signal.
+	]=]
+	function Signal.Is(obj: any): boolean
+		return type(obj) == "table" and getmetatable(obj) == Signal
+	end
+
+	--[=[
+		@param fn ConnectionFn
+		@return SignalConnection
+
+		Connects a function to the signal, which will be called anytime the signal is fired.
+		```lua
+		signal:Connect(function(msg, num)
+			print(msg, num)
+		end)
+
+		signal:Fire("Hello", 25)
+		```
+	]=]
+	function Signal:Connect(fn)
+		local connection = setmetatable({
+			Connected = true,
+			_signal = self,
+			_fn = fn,
+			_next = false,
+		}, Connection)
+
+		if self._handlerListHead then
+			connection._next = self._handlerListHead
+			self._handlerListHead = connection
+		else
+			self._handlerListHead = connection
+		end
+
+		return connection
+	end
+
+	--[=[
+		@deprecated v1.3.0 -- Use `Signal:Once` instead.
+		@param fn ConnectionFn
+		@return SignalConnection
+	]=]
+	function Signal:ConnectOnce(fn)
+		return self:Once(fn)
+	end
+
+	--[=[
+		@param fn ConnectionFn
+		@return SignalConnection
+
+		Connects a function to the signal, which will be called the next time the signal fires. Once
+		the connection is triggered, it will disconnect itself.
+		```lua
+		signal:Once(function(msg, num)
+			print(msg, num)
+		end)
+
+		signal:Fire("Hello", 25)
+		signal:Fire("This message will not go through", 10)
+		```
+	]=]
+	function Signal:Once(fn)
+		local connection
+		local done = false
+
+		connection = self:Connect(function(...)
+			if done then
+				return
+			end
+
+			done = true
+			connection:Disconnect()
+			fn(...)
+		end)
+
+		return connection
+	end
+
+	function Signal:GetConnections()
+		local items = {}
+
+		local item = self._handlerListHead
+		while item do
+			table.insert(items, item)
+			item = item._next
+		end
+
+		return items
+	end
+
+	-- Disconnect all handlers. Since we use a linked list it suffices to clear the
+	-- reference to the head handler.
+	--[=[
+		Disconnects all connections from the signal.
+		```lua
+		signal:DisconnectAll()
+		```
+	]=]
+	function Signal:DisconnectAll()
+		local item = self._handlerListHead
+		while item do
+			item.Connected = false
+			item = item._next
+		end
+		self._handlerListHead = false
+
+		local yieldedThreads = rawget(self, "_yieldedThreads")
+		if yieldedThreads then
+			for thread in yieldedThreads do
+				if coroutine.status(thread) == "suspended" then
+					warn(debug.traceback(thread, "signal disconnected; yielded thread cancelled", 2))
+					task.cancel(thread)
+				end
+			end
+			table.clear(self._yieldedThreads)
+		end
+	end
+
+	-- Signal:Fire(...) implemented by running the handler functions on the
+	-- coRunnerThread, and any time the resulting thread yielded without returning
+	-- to us, that means that it yielded to the Roblox scheduler and has been taken
+	-- over by Roblox scheduling, meaning we have to make a new coroutine runner.
+	--[=[
+		@param ... any
+
+		Fire the signal, which will call all of the connected functions with the given arguments.
+		```lua
+		signal:Fire("Hello")
+
+		-- Any number of arguments can be fired:
+		signal:Fire("Hello", 32, {Test = "Test"}, true)
+		```
+	]=]
+	function Signal:Fire(...)
+		local item = self._handlerListHead
+		while item do
+			if item.Connected then
+				if not freeRunnerThread then
+					freeRunnerThread = coroutine.create(runEventHandlerInFreeThread)
+				end
+				task.spawn(freeRunnerThread, item._fn, ...)
+			end
+			item = item._next
+		end
+	end
+
+	--[=[
+		@param ... any
+
+		Same as `Fire`, but uses `task.defer` internally & doesn't take advantage of thread reuse.
+		```lua
+		signal:FireDeferred("Hello")
+		```
+	]=]
+	function Signal:FireDeferred(...)
+		local item = self._handlerListHead
+		while item do
+			local conn = item
+			task.defer(function(...)
+				if conn.Connected then
+					conn._fn(...)
+				end
+			end, ...)
+			item = item._next
+		end
+	end
+
+	--[=[
+		@return ... any
+		@yields
+
+		Yields the current thread until the signal is fired, and returns the arguments fired from the signal.
+		Yielding the current thread is not always desirable. If the desire is to only capture the next event
+		fired, using `Once` might be a better solution.
+		```lua
+		task.spawn(function()
+			local msg, num = signal:Wait()
+			print(msg, num) --> "Hello", 32
+		end)
+		signal:Fire("Hello", 32)
+		```
+	]=]
+	function Signal:Wait()
+		local yieldedThreads = rawget(self, "_yieldedThreads")
+		if not yieldedThreads then
+			yieldedThreads = {}
+			rawset(self, "_yieldedThreads", yieldedThreads)
+		end
+
+		local thread = coroutine.running()
+		yieldedThreads[thread] = true
+
+		self:Once(function(...)
+			yieldedThreads[thread] = nil
+			task.spawn(thread, ...)
+		end)
+
+		return coroutine.yield()
+	end
+
+	--[=[
+		Cleans up the signal.
+
+		Technically, this is only necessary if the signal is created using
+		`Signal.Wrap`. Connections should be properly GC'd once the signal
+		is no longer referenced anywhere. However, it is still good practice
+		to include ways to strictly clean up resources. Calling `Destroy`
+		on a signal will also disconnect all connections immediately.
+		```lua
+		signal:Destroy()
+		```
+	]=]
+	function Signal:Destroy()
+		self:DisconnectAll()
+
+		local proxyHandler = rawget(self, "_proxyHandler")
+		if proxyHandler then
+			proxyHandler:Disconnect()
+		end
+	end
+
+	-- Make signal strict
+	setmetatable(Signal, {
+		__index = function(_tb, key)
+			error(("Attempt to get Signal::%s (not a valid member)"):format(tostring(key)), 2)
+		end,
+		__newindex = function(_tb, key, _value)
+			error(("Attempt to set Signal::%s (not a valid member)"):format(tostring(key)), 2)
+		end,
+	})
+
+	SignalClass = table.freeze({
+		new = Signal.new,
+		Wrap = Signal.Wrap,
+		Is = Signal.Is,
+	})
+end
+
 local AnimationTrack
 local twait = task.wait
+local Signal = SignalClass
 local http = game:GetService("HttpService")
 local tween = game:GetService("TweenService")
+
+-- // optimizations
+local find = table.find
+local clear = table.clear
+local insert = table.insert
+local min, max = math.min, math.max
 
 do
 	AnimationTrack = {}
@@ -63,7 +506,7 @@ do
 				v:Disconnect()
 			end
 
-			table.clear(self.Connections)
+			clear(self.Connections)
 		end
 
 		if self.Binds then
@@ -71,11 +514,11 @@ do
 				v:Destroy()
 			end
 
-			table.clear(self.Binds)
+			clear(self.Binds)
 		end
 
-		table.clear(self.Cache)
-		table.clear(self.Used)
+		clear(self.Cache)
+		clear(self.Used)
 		self.StopBind:Destroy()
 		self.StopBind = nil
 
@@ -90,23 +533,21 @@ do
 			end
 		end
 
-		table.clear(self)
+		clear(self)
 		self = nil
 	end
 
 	function AnimationTrack.new()
-		local be = Instance.new("BindableEvent", script)
-
 		local track = setmetatable({}, AnimationTrack)
 		track.Rigs = nil
+
 
 		track.Used = {}
 		track.Cache = {}
 		track.Binds = {}
-		track.StopBind = be
 		track.Connections = {}
-		track.Stopped = be.Event
 		track.KeyframeMarkers = {}
+		track.Stopped = Signal.new()
 		track.Identifier = http:GenerateGUID()
 
 		return track
@@ -114,11 +555,10 @@ do
 
 	function AnimationTrack.GetMarkerReachedSignal(self, marker)
 		if not self.Binds[marker] then
-			local be = Instance.new("BindableEvent")
-			self.Binds[marker] = be
+			self.Binds[marker] = Signal.new()
 		end
 
-		return self.Binds[marker].Event
+		return self.Binds[marker]
 	end
 
 	function AnimationTrack.GetKeyframeReachedSignal(self, keyframe)
@@ -128,14 +568,13 @@ do
 			assert(keyframe, string.format("Keyframe #%d does not exist!", num))
 		end
 
-		assert(table.find(self.Animation, keyframe), "Keyframe does not exist!")
+		assert(find(self.Animation, keyframe), "Keyframe does not exist!")
 
 		if not self.Binds[keyframe] then
-			local be = Instance.new("BindableEvent")
-			self.Binds[keyframe] = be
+			self.Binds[keyframe] = Signal.new()
 		end
 
-		return self.Binds[keyframe].Event
+		return self.Binds[keyframe]
 	end
 
 	function AnimationTrack.AdjustWeight(self, weight)
@@ -147,12 +586,13 @@ do
 		local weld = motor:FindFirstChild("AWeld")
 
 		if not weld then
-			weld = Instance.new("Weld", motor)
+			weld = Instance.new("Weld")
 			weld.C0 = motor.C0
 			weld.C1 = motor.C1
 			weld.Name = "AWeld"
 			weld.Part0 = motor.Part0
 			weld.Part1 = motor.Part1
+			weld.Parent = motor
 		end
 
 		weld:SetAttribute("AnitrackerEnabled", true)
@@ -192,7 +632,9 @@ do
 			end
 		end
 
-		if not AnimationTrack.Rigs[rig] then
+		local main = AnimationTrack.Rigs[rig]
+		
+		if not main then
 			AnimationTrack.Rigs[rig] = {
 				Poses = {},
 				Welds = {},
@@ -200,6 +642,7 @@ do
 			}
 
 			local animate
+			main = AnimationTrack.Rigs[rig]
 
 			animate = game:GetService("RunService").PostSimulation:Connect(function()
 				if not AnimationTrack.Rigs[rig] then
@@ -208,8 +651,9 @@ do
 
 				local allDone = true
 				local usedJoints = {}
+				local main = AnimationTrack.Rigs[rig]
 
-				for _, v in pairs(AnimationTrack.Rigs[rig].Animations) do
+				for _, v in pairs(main.Animations) do
 					if v.IsPlaying then
 						allDone = false
 
@@ -220,14 +664,14 @@ do
 				end
 
 				if not boner then
-					for i, v in pairs(AnimationTrack.Rigs[rig].Welds) do
+					for i, v in pairs(main.Welds) do
 						repeat
 							if not v.Parent then
-								AnimationTrack.Rigs[rig].Welds[i] = nil
+								main.Welds[i] = nil
 								break
 							end
 
-							local offset = AnimationTrack.Rigs[rig].Poses[i]
+							local offset = main.Poses[i]
 							offset = CFrame.new(offset.Position * rig:GetScale()) * CFrame.Angles(offset:ToEulerAnglesXYZ())
 
 							if not allDone and usedJoints[i] then
@@ -240,35 +684,35 @@ do
 									if (v.C0.Position - (v.Parent.C0 * v.Parent.Transform).Position).Magnitude <= .2 then
 										v.Enabled = false
 
-										if AnimationTrack.Rigs[self.Rig] then
-											AnimationTrack.Rigs[self.Rig].Poses[i] = CFrame.new()
+										if main then
+											main.Poses[i] = CFrame.new()
 										end
 									end
 								else
 									v.Enabled = false
 
-									if AnimationTrack.Rigs[self.Rig] then
-										AnimationTrack.Rigs[self.Rig].Poses[i] = v.Parent.Transform
+									if main then
+										main.Poses[i] = v.Parent.Transform
 									end
 								end
 							end
 						until true
 					end
 				else
-					for i, v in pairs(AnimationTrack.Rigs[rig].Welds) do
+					for i, v in pairs(main.Welds) do
 						repeat
 							if not v:GetAttribute("Initial") then
-								AnimationTrack.Rigs[rig].Welds[i] = nil
+								main.Welds[i] = nil
 								break
 							end
 
 							if not allDone then
-								v.CFrame = v:GetAttribute("Initial") * AnimationTrack.Rigs[rig].Poses[i]
+								v.CFrame = v:GetAttribute("Initial") * main.Poses[i]
 							else
 								v.CFrame = v:GetAttribute("Initial")
 
-								if AnimationTrack.Rigs[self.Rig] then
-									AnimationTrack.Rigs[self.Rig].Poses[i] = CFrame.new()
+								if main then
+									main.Poses[i] = CFrame.new()
 								end
 							end
 						until true
@@ -288,17 +732,17 @@ do
 				end
 			end)
 
-			AnimationTrack.Rigs[rig].Adder = adder
-			AnimationTrack.Rigs[rig].Animate = animate
+			main.Adder = adder
+			main.Animate = animate
 		else
-			table.insert(AnimationTrack.Rigs[rig].Animations, self)
+			insert(main.Animations, self)
 		end
 
 		for _, v in pairs(rig:GetDescendants()) do
 			repeat
 				if boner and v:IsA("Bone") and self.Used[v.Name] then
-					AnimationTrack.Rigs[rig].Welds[v.Name] = v
-					AnimationTrack.Rigs[rig].Poses[v.Name] = CFrame.new()
+					main.Welds[v.Name] = v
+					main.Poses[v.Name] = CFrame.new()
 
 					break
 				end
@@ -360,7 +804,7 @@ do
 				repeat
 					if typeof(w) ~= "table" then
 						if typeof(w) == "string" then
-							table.insert(self.KeyframeMarkers, {
+							insert(self.KeyframeMarkers, {
 								Name = j,
 								Value = w,
 								Time = v.tm
@@ -398,18 +842,19 @@ do
 	end
 
 	function AnimationTrack.IsPrioritized(self, j)
-		if not AnimationTrack.Rigs[self.Rig] then
+		local main = AnimationTrack.Rigs[self.Rig]
+		if not main then
 			return
 		end
 
-		if not AnimationTrack.Rigs[self.Rig].Animations then
+		if not main.Animations then
 			return
 		end
 
 		local highest = 0
 		local prioritized
 
-		for _, v in pairs(AnimationTrack.Rigs[self.Rig].Animations) do
+		for _, v in pairs(main.Animations) do
 			if v.Weight > highest and v.IsPlaying then
 				prioritized = v
 				highest = v.Weight
@@ -423,7 +868,7 @@ do
 				local second
 				local highest = 0
 
-				for _, v in pairs(AnimationTrack.Rigs[self.Rig].Animations) do
+				for _, v in pairs(main.Animations) do
 					if v.Weight > highest and v.IsPlaying and v ~= prioritized then
 						second = v
 						highest = v.Weight
@@ -484,6 +929,7 @@ do
 				local tm = 0
 				local nx = w.nx
 				local cf = w.cf
+				local poses = AnimationTrack.Rigs[self.Rig].Poses
 
 				if nx then
 					cf = self.Animation[w.nx][j].cf
@@ -492,7 +938,7 @@ do
 
 				if self:IsPrioritized(j) and (w.es == "Constant" or inst) then
 					if inst and self:IsPrioritized(j) then
-						AnimationTrack.Rigs[self.Rig].Poses[j] = cf
+						poses[j] = cf
 						break
 					end
 
@@ -500,7 +946,7 @@ do
 
 					coroutine.wrap(function()
 						repeat
-							AnimationTrack.Rigs[self.Rig].Poses[j] = cf
+							poses[j] = cf
 							twait()
 						until tick() - start >= (tm / speed)
 					end)()
@@ -514,19 +960,25 @@ do
 
 				coroutine.wrap(function()
 					local s = tick()
-					local current = AnimationTrack.Rigs[self.Rig].Poses[j]
+					local ntm = (tm / speed)
+					local current = poses[j]
+					local es, ed = Enum.EasingStyle[w.es], Enum.EasingDirection[w.ed]
 
 					repeat
 						twait()
 
 						local cf = current:Lerp(cf, tween:GetValue(
-							(tick() - s) / (tm / speed),
-							Enum.EasingStyle[w.es],
-							Enum.EasingDirection[w.ed]
+							(tick() - s) / ntm, es, ed
 						))
 
+						local alpha = min(self.lerpFactor * max(1, speed), 1)
+
 						if self:IsPrioritized(j) then
-							AnimationTrack.Rigs[self.Rig].Poses[j] = AnimationTrack.Rigs[self.Rig].Poses[j]:Lerp(cf, math.min(self.lerpFactor * math.max(1, speed), 1))
+							if alpha < 1 then
+								poses[j] = poses[j]:Lerp(cf, alpha)
+							else
+								poses[j] = cf
+							end
 						end
 					until (tick() - s) >= (tm / speed)
 				end)()
@@ -594,7 +1046,7 @@ do
 						end
 					end)
 
-					table.insert(self.Connections, cnt)
+					insert(self.Connections, cnt)
 				end
 
 				repeat
@@ -613,7 +1065,7 @@ do
 			return
 		end
 
-		self.StopBind:Fire()
+		self.Stopped:Fire()
 
 		self.Weight = 0
 		self.IsPlaying = false
