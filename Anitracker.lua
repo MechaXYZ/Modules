@@ -519,8 +519,8 @@ do
 
 		clear(self.Cache)
 		clear(self.Used)
-		self.StopBind:Destroy()
-		self.StopBind = nil
+		self.Stopped:Destroy()
+        self.Stopped = nil
 
 		local stuff = AnimationTrack.Rigs[self.Rig]
 
