@@ -872,7 +872,8 @@ do
 
 		self.Weight = 0
 		self.IsPlaying = false
-
+        self.TimePosition = self.Length
+		
 		if self.Connections then
 			for _, cnt in pairs(self.Connections) do
 				cnt:Disconnect()
