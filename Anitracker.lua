@@ -480,7 +480,8 @@ do
 
 							if not allDone and usedJoints[i] then
 								v.Enabled = v:GetAttribute("AnitrackerEnabled")
-								v.C0 = v.Parent.C0 * offset
+								v.C0 = v.Parent.C0 * (offset * (v.Parent:GetAttribute("AnitrackerOffset") or CFrame.identity))
+								v.Parent:SetAttribute("AnitrackerTransform", offset)
 							elseif allDone or not usedJoints[i] then
 								if not self.NoDisableTransition then
 									v.C0 = v.C0:Lerp(v.Parent.C0 * v.Parent.Transform, self.lerpFactor)
