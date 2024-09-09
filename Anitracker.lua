@@ -351,6 +351,7 @@ do
 		track.Connections = {}
 		track.KeyframeMarkers = {}
 		track.Stopped = Signal.new()
+		track.DidLoop = Signal.new()
 		track.Identifier = http:GenerateGUID()
 
 		return track
@@ -858,6 +859,10 @@ do
 
 				if self.TimePosition >= self.Length and not self.Looped then
 					self:Stop()
+				end
+
+				if self.Looped then
+					self.DidLoop:Fire()
 				end
 			until not self.Looped or not self.IsPlaying
 		end)()
