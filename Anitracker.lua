@@ -273,6 +273,7 @@ do
 end
 
 local AnimationTrack
+local ins_thres = .006
 local twait = task.wait
 local Signal = SignalClass
 local http = game:GetService("HttpService")
@@ -475,6 +476,8 @@ do
 				end
 
 				if not boner then
+					local honored_one = self:GetPrioritized()
+
 					for i, v in pairs(main.Welds) do
 						repeat
 							if not v.Parent then
@@ -484,7 +487,7 @@ do
 
 							local transform = main.Poses[i]
 
-							if self.RootMotion == i and v.Enabled and not allDone and usedJoints[i] then
+							if honored_one and honored_one.RootMotion == i and v.Enabled and not allDone and usedJoints[i] then
 								local root = main.Welds[i].Part0
 
 								--[[
@@ -501,14 +504,14 @@ do
 								game:GetService("TweenService"):Create(f, TweenInfo.new(2), {Transparency = 1}):Play()
 								task.delay(2, f.Destroy, f)
 								]]
-								
-								local delta = self.LastRootTransform:ToObjectSpace(transform)
+
+								local delta = honored_one.LastRootTransform:ToObjectSpace(transform)
 								local calc = ((v.Parent.C0 * delta) * v.Parent.C1:Inverse())
 
-								self.LastRootTransform = transform
+								honored_one.LastRootTransform = transform
 
 								if root.Anchored then
-									self.RootVelocity.MaxForce = Vector3.zero
+									honored_one.RootVelocity.MaxForce = Vector3.zero
 									root.CFrame = root.CFrame * calc
 									transform = CFrame.identity
 								else
@@ -518,12 +521,12 @@ do
 									root.CFrame = root.CFrame * CFrame.Angles(0, y, 0)
 
 									local dist = calc.Position.Magnitude
-									self.RootVelocity.MaxForce = Vector3.one * 10e7
+									honored_one.RootVelocity.MaxForce = Vector3.one * 10e7
 									
 									if dist > 0 then
-										self.RootVelocity.Velocity = (root.CFrame * calc).LookVector / dist / dt
+										honored_one.RootVelocity.Velocity = (root.CFrame * calc).LookVector / dist / dt
 									else
-										self.RootVelocity.Velocity = Vector3.zero
+										honored_one.RootVelocity.Velocity = Vector3.zero
 									end
 									
 									local x, _, z = transform:ToEulerAnglesXYZ()
@@ -641,13 +644,7 @@ do
 		self.LastRootTransform = CFrame.identity
 
 		self.DidLoop:Connect(function()
-			local main = AnimationTrack.Rigs[self.Rig]
-
-			if not main then
-				return
-			end
-
-			self.LastRootTransform = main.Poses[self.RootMotion]
+			self.LastRootTransform = CFrame.identity
 		end)
 	end
 
@@ -699,8 +696,7 @@ do
 					self.Used[j] = true
 
 					-- // taken from replay
-
-					local o = 1
+					local o, p = 1, 1
 
 					while true do
 						local next = anim[i + o]
@@ -712,7 +708,22 @@ do
 
 						o = o + 1
 
-						if o >= #(anim) then
+						if (i + o) > #(anim) then
+							break
+						end
+					end
+
+					while true do
+						local prev = anim[i - p]
+
+						if prev and prev[j] then
+							w.pv = i - p
+							break
+						end
+
+						p = p + 1
+
+						if (i - p) < 1 then
 							break
 						end
 					end
@@ -723,14 +734,30 @@ do
 		self.Length = length
 	end
 
-	function AnimationTrack.IsPrioritized(self, j)
+	function AnimationTrack.GetPrioritized(self)
 		local main = AnimationTrack.Rigs[self.Rig]
 
-		if not main then
+		if not main or not main.Animations then
 			return
 		end
 
-		if not main.Animations then
+		local highest = 0
+		local prioritized
+
+		for _, v in pairs(main.Animations) do
+			if v.Weight > highest and v.IsPlaying then
+				prioritized = v
+				highest = v.Weight
+			end
+		end
+
+		return prioritized
+	end
+
+	function AnimationTrack.IsPrioritized(self, j)
+		local main = AnimationTrack.Rigs[self.Rig]
+
+		if not main or not main.Animations then
 			return
 		end
 
@@ -819,19 +846,19 @@ do
 					tm = self.Animation[w.nx].tm - v.tm
 				end
 
-				if self:IsPrioritized(j) and (w.es == "Constant" or inst) then
-					if inst and self:IsPrioritized(j) then
+				if self:IsPrioritized(j) and (w.es == "Constant" or inst or not w.pv or tm <= ins_thres) then
+					if self:IsPrioritized(j) and (inst or not w.pv or tm <= ins_thres) then
 						poses[j] = cf
 						break
 					end
 
-					local start = tick()
+					local t = 0
 
 					coroutine.wrap(function()
 						repeat
 							poses[j] = cf
-							twait()
-						until tick() - start >= (tm / speed)
+							t = t + twait()
+						until t >= (tm / speed)
 					end)()
 
 					break
@@ -842,16 +869,14 @@ do
 				end
 
 				coroutine.wrap(function()
-					local s = tick()
+					local t = 0
 					local ntm = (tm / speed)
 					local current = poses[j]
 					local es, ed = Enum.EasingStyle[w.es], Enum.EasingDirection[w.ed]
 
 					repeat
-						twait()
-
 						local cf = current:Lerp(cf, tween:GetValue(
-							(tick() - s) / ntm, es, ed
+							t / ntm, es, ed
 						))
 
 						local alpha = min(self.lerpFactor * max(1, speed), 1)
@@ -863,7 +888,9 @@ do
 								poses[j] = cf
 							end
 						end
-					until (tick() - s) >= (tm / speed)
+
+						t = t + twait()
+					until t >= (tm / speed)
 				end)()
 			until true
 
@@ -915,13 +942,19 @@ do
 			repeat
 				self.TimePosition = 0
 
-				for _, v in ipairs(self.Animation) do
+				local len = #(self.Animation)
+
+				for i, v in ipairs(self.Animation) do
 					local cnt
 					local total = 0
 					local time = v.tm
 
 					cnt = game:GetService("RunService").PostSimulation:Connect(function(dt)
-						total = total + dt * self.Speed
+						total = total + (dt * self.Speed)
+
+						if (i == len) then
+							self.TimePosition = self.TimePosition + (dt * self.Speed)
+						end
 
 						if total >= time then
 							cnt:Disconnect()
@@ -933,7 +966,7 @@ do
 				end
 
 				repeat
-					self.TimePosition = self.TimePosition + twait() * self.Speed
+					twait()
 				until self.TimePosition >= (self.Length + (self.Looped and 0 or self.Stall)) or not self.IsPlaying
 
 				if self.TimePosition >= self.Length and not self.Looped then
@@ -969,3 +1002,5 @@ do
 		self.Speed = speed or 1
 	end
 end
+
+return AnimationTrack
