@@ -950,9 +950,7 @@ do
 		coroutine.wrap(function()
 			repeat
 				self.TimePosition = 0
-
-				local len = #(self.Animation)
-
+				
 				for i, v in ipairs(self.Animation) do
 					local cnt
 					local total = 0
@@ -960,11 +958,7 @@ do
 
 					cnt = game:GetService("RunService").PostSimulation:Connect(function(dt)
 						total = total + (dt * self.Speed)
-
-						if (i == len) then
-							self.TimePosition = self.TimePosition + (dt * self.Speed)
-						end
-
+						
 						if total >= time then
 							cnt:Disconnect()
 							self:goToKeyframe(v)
@@ -975,7 +969,7 @@ do
 				end
 
 				repeat
-					twait()
+					self.TimePosition = self.TimePosition + (twait() * self.Speed)
 				until self.TimePosition >= (self.Length + (self.Looped and 0 or self.Stall)) or not self.IsPlaying
 
 				if self.TimePosition >= self.Length and not self.Looped then
