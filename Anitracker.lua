@@ -297,8 +297,8 @@ do
 	AnimationTrack.lerpFactor = .6
 	AnimationTrack.TimePosition = 0
 	AnimationTrack.IsPlaying = false
+	AnimationTrack.AutoDisableWelds = true
 	AnimationTrack.__index = AnimationTrack
-	AnimationTrack.AutoDisableWelds = false
 	AnimationTrack.NoDisableTransition = false
 
 	local function enumExists(type, value)
