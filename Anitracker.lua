@@ -35,7 +35,6 @@
 ]]
 
 -- // Signal by sleitnick (edited for lua 5.1)
-
 local SignalClass
 
 do
@@ -299,7 +298,7 @@ do
 	AnimationTrack.TimePosition = 0
 	AnimationTrack.IsPlaying = false
 	AnimationTrack.__index = AnimationTrack
-	AnimationTrack.AutoDisableWelds = true
+	AnimationTrack.AutoDisableWelds = false
 	AnimationTrack.NoDisableTransition = false
 
 	local function enumExists(type, value)
@@ -411,7 +410,7 @@ do
 		weld:SetAttribute("AnitrackerEnabled", true)
 
 		AnimationTrack.Rigs[self.Rig].Welds[motor.Part1.Name] = weld
-		AnimationTrack.Rigs[self.Rig].Poses[motor.Part1.Name] = CFrame.new()
+		AnimationTrack.Rigs[self.Rig].Poses[motor.Part1.Name] = CFrame.identity
 	end
 
 	function AnimationTrack.setRig(self, rig)
@@ -552,7 +551,7 @@ do
 											v.Enabled = false
 
 											if main then
-												main.Poses[i] = CFrame.new()
+												main.Poses[i] = v.Parent.Transform
 											end
 										end
 									else
@@ -583,7 +582,7 @@ do
 								v.CFrame = v:GetAttribute("Initial")
 
 								if main then
-									main.Poses[i] = CFrame.new()
+									main.Poses[i] = CFrame.identity
 								end
 							end
 						until true
@@ -613,7 +612,7 @@ do
 			repeat
 				if boner and v:IsA("Bone") and self.Used[v.Name] then
 					main.Welds[v.Name] = v
-					main.Poses[v.Name] = CFrame.new()
+					main.Poses[v.Name] = CFrame.identity
 
 					break
 				end
@@ -845,7 +844,7 @@ do
 					break
 				end
 
-				local tm = 0
+				local tm = .1
 				local nx = w.nx
 				local cf = w.cf
 				local poses = AnimationTrack.Rigs[self.Rig].Poses
@@ -855,19 +854,21 @@ do
 					tm = self.Animation[w.nx].tm - v.tm
 				end
 
-				if self:IsPrioritized(j) and (w.es == "Constant" or inst or not w.pv or tm <= ins_thres) then
-					if self:IsPrioritized(j) and (inst or not w.pv or tm <= ins_thres) then
+				if self:IsPrioritized(j) and (w.es == "Constant" or inst --[[or not w.pv or tm <= ins_thres]]) then
+					if self:IsPrioritized(j) and (inst --[[or not w.pv or tm <= ins_thres]]) then
 						poses[j] = cf
 						break
 					end
 
 					local t = 0
+					local ntm = (tm / speed)
 
 					coroutine.wrap(function()
+
 						repeat
 							poses[j] = cf
 							t = t + twait()
-						until t >= (tm / speed)
+						until t >= ntm
 					end)()
 
 					break
@@ -885,7 +886,7 @@ do
 
 					repeat
 						local cf = current:Lerp(cf, tween:GetValue(
-							t / ntm, es, ed
+							min(t / ntm, 1), es, ed
 						))
 
 						local alpha = min(self.lerpFactor * max(1, speed), 1)
@@ -899,7 +900,7 @@ do
 						end
 
 						t = t + twait()
-					until t >= (tm / speed)
+					until t >= ntm
 				end)()
 			until true
 
@@ -945,6 +946,10 @@ do
 			end)()
 
 			return
+		end
+
+		if self.RootMotion then
+			self.LastRootTransform = CFrame.identity
 		end
 
 		coroutine.wrap(function()
@@ -993,10 +998,18 @@ do
 		self.Weight = 0
 		self.IsPlaying = false
 		self.TimePosition = self.Length
-
+		
 		if self.Connections then
 			for _, cnt in pairs(self.Connections) do
 				cnt:Disconnect()
+			end
+		end
+		
+		local main = AnimationTrack.Rigs[self.Rig]
+
+		if self.RootMotion and main and main.Poses then
+			for _ = 1, 1000 do
+				main.Poses[self.RootMotion] = CFrame.identity
 			end
 		end
 	end
