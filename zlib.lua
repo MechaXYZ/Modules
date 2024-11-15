@@ -326,6 +326,8 @@ local table_sort = table.sort
 local tostring = tostring
 local type = type
 
+local task_wait = task.wait
+
 -- Converts i to 2^i, (0<=i<=32)
 -- This is used to implement bit left shift and bit right shift.
 -- "x >> y" in C:   "(x-x%_pow2[y])/_pow2[y]" in Lua
@@ -2789,8 +2791,8 @@ local function Inflate(state)
 		t = t + 1
 
 		if t % Compression.WaitThreshold == 0 then
-			print("waiting, number of blocks inflated: " .. t)
-			task.wait()
+			print(`inflate taking too long, waiting... ({t} blocks)`)
+			task_wait(Compression.WaitLength)
 		end
 
 		is_last_block = (ReadBits(1) == 1)
@@ -2815,7 +2817,7 @@ local function Inflate(state)
 	local result = table_concat(state.result_buffer)
 
 	if t > Compression.WaitThreshold then
-		print("done inflating, number of blocks inflated: " .. t)
+		print(`inflate finished, {t} blocks inflated`)
 	end
 
 	return result
@@ -3423,6 +3425,7 @@ LibDeflate.internals = {
 	InternalClearCache = InternalClearCache,
 }
 
+Compression.WaitLength = .1
 Compression.WaitThreshold = 150
 
 return Compression
