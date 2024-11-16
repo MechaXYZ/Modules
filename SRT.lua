@@ -47,9 +47,12 @@ function SRT.Parse(fileSource: string)
 			EndTime = 0;
 		}
 
-		-- hours:minutes:seconds,milliseconds
 		local StartHour,StartMinute,StartSecond,StartMilli, EndHour,EndMinute,EndSecond,EndMilli = string.match(Chunk, "([%d]-):([%d]-):([%d]-),([%d]-) %-%-> ([%d]-):([%d]-):([%d]-),([%d]+)")
-		
+
+		if not StartHour or not StartMinute or not StartSecond or not StartMilli or not EndHour or not EndMinute or not EndSecond or not EndMilli then
+			continue
+		end
+
 		Cap.StartTimeMilli = (tonumber(StartHour) * 3600000) + (tonumber(StartMinute) * 60000) + (tonumber(StartSecond) * 1000) + tonumber(StartMilli)
 		Cap.EndTimeMilli = (tonumber(EndHour) * 3600000) + (tonumber(EndMinute) * 60000) + (tonumber(EndSecond) * 1000) + tonumber(EndMilli)
 
