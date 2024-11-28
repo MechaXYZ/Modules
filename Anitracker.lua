@@ -752,7 +752,7 @@ do
 							repeat
 								poses[j] = cf
 								twait()
-							until tick() - start >= (tm / speed)
+							until tick() - start >= (tm / speed) or not self:IsPrioritized(j)
 						end)()
 					end
 
