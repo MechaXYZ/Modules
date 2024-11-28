@@ -14,12 +14,12 @@
 
 	-- // can pass an url too
 	-- // local anims = "https://rentry.co/anitracker_example/raw"
-	
+
 	local anim = AnimationTrack.new()
 	anim:setAnimation(anims)
 	anim:setRig(owner.Character)
 	anim:Play()
-	
+
 	- AdjustWeight doesn't actually adjust weight, it adjusts priority (i thought weights and priority were the same thing a while back)
 	- set anim.lerpFactor to change how much it lerps into the next pose
 	- AnimationTrack.NoDisableTransition is global and sets whether the welds lerp into their parent's Transform after all animations on a rig are done playing before being disabled, setting it to false disables the welds as soon as the last animation stops
@@ -249,7 +249,7 @@ do
 			proxyHandler:Disconnect()
 		end
 	end
-	
+
 	setmetatable(Signal, {
 		__index = function(_tb, key)
 			error(("Attempt to get Signal::%s (not a valid member)"):format(tostring(key)), 2)
@@ -437,7 +437,7 @@ do
 		end
 
 		local main = AnimationTrack.Rigs[rig]
-		
+
 		if not main then
 			AnimationTrack.Rigs[rig] = {
 				Poses = {},
@@ -598,8 +598,6 @@ do
 
 		self.Animation = anim
 
-		local found = {}
-
 		for i, v in pairs(anim) do
 			if v.tm > length then
 				length = v.tm
@@ -619,7 +617,7 @@ do
 						break
 					end
 
-					found[j] = true
+					print(w.es, self.Name)
 					self.Used[j] = true
 
 					-- // taken from replay
@@ -707,7 +705,7 @@ do
 		end
 	end
 
-	function AnimationTrack.goToKeyframe(self, v, inst)
+	function AnimationTrack.goToKeyframe(self, v, inst, name)
 		local speed = self.Speed
 
 		if self.Binds[v] then
@@ -715,7 +713,7 @@ do
 		end
 
 		for j, w in pairs(v) do
-			local br = false
+			local br
 
 			repeat
 				if typeof(w) ~= "table" or not AnimationTrack.Rigs[self.Rig].Poses[j] then
@@ -741,20 +739,22 @@ do
 					tm = self.Animation[w.nx].tm - v.tm
 				end
 
-				if self:IsPrioritized(j) and (w.es == "Constant" or inst) then
-					if inst and self:IsPrioritized(j) then
-						poses[j] = cf
-						break
-					end
-
-					local start = tick()
-
-					coroutine.wrap(function()
-						repeat
+				if w.es == "Constant" or inst then
+					if self:IsPrioritized(j) then
+						if inst then
 							poses[j] = cf
-							twait()
-						until tick() - start >= (tm / speed)
-					end)()
+							break
+						end
+
+						local start = tick()
+
+						coroutine.wrap(function()
+							repeat
+								poses[j] = cf
+								twait()
+							until tick() - start >= (tm / speed)
+						end)()
+					end
 
 					break
 				end
@@ -772,7 +772,7 @@ do
 					repeat
 						twait()
 
-						local cf = current:Lerp(cf, tween:GetValue(
+						cf = current:Lerp(cf, tween:GetValue(
 							(tick() - s) / ntm, es, ed
 						))
 
@@ -819,7 +819,7 @@ do
 					twait()
 
 					for _, v in ipairs(self.Animation) do
-						self:goToKeyframe(v, true)
+						self:goToKeyframe(v, true, self.Name)
 						self.TimePosition = self.TimePosition + v.tm
 					end
 
@@ -847,7 +847,7 @@ do
 
 						if total >= time then
 							cnt:Disconnect()
-							self:goToKeyframe(v)
+							self:goToKeyframe(v, false, self.Name)
 						end
 					end)
 
@@ -879,7 +879,7 @@ do
 		self.Weight = 0
 		self.IsPlaying = false
         self.TimePosition = self.Length
-		
+
 		if self.Connections then
 			for _, cnt in pairs(self.Connections) do
 				cnt:Disconnect()
