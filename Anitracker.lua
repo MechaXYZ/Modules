@@ -617,7 +617,6 @@ do
 						break
 					end
 
-					print(w.es, self.Name)
 					self.Used[j] = true
 
 					-- // taken from replay
