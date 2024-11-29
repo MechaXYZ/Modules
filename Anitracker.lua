@@ -749,6 +749,7 @@ do
 
 						coroutine.wrap(function()
 							repeat
+								speed = self.Speed
 								poses[j] = cf
 								twait()
 							until tick() - start >= (tm / speed) or not self:IsPrioritized(j)
@@ -764,15 +765,15 @@ do
 
 				coroutine.wrap(function()
 					local s = tick()
-					local ntm = (tm / speed)
 					local current = poses[j]
 					local es, ed = Enum.EasingStyle[w.es], Enum.EasingDirection[w.ed]
 
 					repeat
 						twait()
+						speed = self.Speed
 
-						cf = current:Lerp(cf, tween:GetValue(
-							(tick() - s) / ntm, es, ed
+						local cf = current:Lerp(cf, tween:GetValue(
+							(tick() - s) / (tm / speed), es, ed
 						))
 
 						local alpha = min(self.lerpFactor * max(1, speed), 1)
@@ -838,13 +839,10 @@ do
 
 				for _, v in ipairs(self.Animation) do
 					local cnt
-					local total = 0
 					local time = v.tm
 
 					cnt = game:GetService("RunService").PostSimulation:Connect(function(dt)
-						total = total + dt * self.Speed
-
-						if total >= time then
+						if self.TimePosition >= time then
 							cnt:Disconnect()
 							self:goToKeyframe(v, false, self.Name)
 						end
