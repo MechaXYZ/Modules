@@ -412,27 +412,30 @@ do
 		self.Rig = rig
 
 		-- // funny variable name
-		local boner = rig:FindFirstChild("InitialPoses")
+		local boner = rig:FindFirstChildWhichIsA("Bone", true)
 
 		if boner then
-			local root = rig:FindFirstChildWhichIsA("Bone", true):FindFirstAncestorWhichIsA("BasePart")
+			local init_poses = rig:FindFirstChild("InitialPoses")
 
-			if not root then
-				boner = nil
-				return
-			end
+			if init_poses then
+				for _, v in pairs(init_poses:GetChildren()) do
+					if v.Name:sub(#(v.Name) - 7, #(v.Name)) == "_Initial" then
+						repeat
+							local bone = rig:FindFirstChild(v.Name:sub(0, #(v.Name) - 8), true)
 
-			for _, v in pairs(boner:GetChildren()) do
-				if string.find(v.Name, "_Initial") then
-					repeat
-						local bone = root:FindFirstChild(string.gsub(v.Name, "_Initial", ""), true)
+							if not bone then
+								break
+							end
 
-						if not bone then
-							break
-						end
-
-						bone:SetAttribute("Initial", v.Value)
-					until true
+							bone:SetAttribute("Initial", v.Value)
+						until true
+					end
+				end
+			else
+				for _, v in pairs(rig:GetDescendants()) do
+					if v:IsA("Bone") then
+						v:SetAttribute("Initial", v.CFrame)
+					end
 				end
 			end
 		end
@@ -468,8 +471,25 @@ do
 					end
 				end
 
-				if not boner then
-					for i, v in pairs(main.Welds) do
+				for i, v in pairs(main.Welds) do
+					if v:IsA("Bone") then
+						repeat
+							if not v:GetAttribute("Initial") then
+								main.Welds[i] = nil
+								break
+							end
+
+							if not allDone then
+								v.CFrame = v:GetAttribute("Initial") * main.Poses[i]
+							else
+								v.CFrame = v:GetAttribute("Initial")
+
+								if main then
+									main.Poses[i] = CFrame.new()
+								end
+							end
+						until true
+					else
 						repeat
 							if not v.Parent then
 								main.Welds[i] = nil
@@ -504,25 +524,6 @@ do
 							end
 						until true
 					end
-				else
-					for i, v in pairs(main.Welds) do
-						repeat
-							if not v:GetAttribute("Initial") then
-								main.Welds[i] = nil
-								break
-							end
-
-							if not allDone then
-								v.CFrame = v:GetAttribute("Initial") * main.Poses[i]
-							else
-								v.CFrame = v:GetAttribute("Initial")
-
-								if main then
-									main.Poses[i] = CFrame.new()
-								end
-							end
-						until true
-					end
 				end
 			end)
 
@@ -535,6 +536,11 @@ do
 
 				if v:IsA("Motor6D") then
 					self:addWeld(v)
+				elseif v:IsA("Bone") then
+					v:SetAttribute("Initial", v.CFrame)
+
+					main.Welds[v.Name] = v
+					main.Poses[v.Name] = CFrame.new()
 				end
 			end)
 
@@ -842,7 +848,7 @@ do
 					local cnt
 					local time = v.tm
 
-					cnt = game:GetService("RunService").PostSimulation:Connect(function(dt)
+					cnt = game:GetService("RunService").PostSimulation:Connect(function()
 						if self.TimePosition >= time then
 							cnt:Disconnect()
 							self:goToKeyframe(v, false, self.Name)
