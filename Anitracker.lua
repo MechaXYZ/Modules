@@ -10,11 +10,8 @@
 	4. anim:Play()
 
 	- example code
-	local AnimationTrack = require(path.to.module) -- // or alternatively, (for the noobs), loadstring(game:GetService("HttpService"):GetAsync("https://github.com/MechaXYZ/modules/raw/main/Anitracker.lua"))()
+	local AnimationTrack = require(path.to.module)
 	local anims = require(path.to.anim)
-
-	-- // can pass an url too
-	-- // local anims = "https://rentry.co/anitracker_example/raw"
 
 	local anim = AnimationTrack.new()
 	anim:setAnimation(anims)
@@ -596,11 +593,7 @@ do
 		local length = 0
 
 		if typeof(anim) == "string" then
-			if game:GetService("RunService"):IsClient() then
-				error("You must be on server to pass urls to setAnimation!")
-			end
-
-			anim = loadstring(http:GetAsync(anim))()
+			error("you must provide a table")
 		end
 
 		self.Animation = anim
